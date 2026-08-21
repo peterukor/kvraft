@@ -1,10 +1,9 @@
 package main
 
+import (
+	"fmt"
+)
 
 func main() {
-	println("kvraft node starting...")
+	fmt.Println("kvraft node starting...")
 }
-
-
-
-
