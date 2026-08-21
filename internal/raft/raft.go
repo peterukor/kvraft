@@ -25,6 +25,7 @@ type Raft struct {
 	Log         []LogEntry
 	CommitIndex int
 	LastApplied int
+	HeartbeatCh chan bool
 }
 
 // new raft constructor
@@ -37,5 +38,6 @@ func NewRaft(id string) *Raft {
 		Log:         []LogEntry{},
 		CommitIndex: 0,
 		LastApplied: 0,
+		HeartbeatCh: make(chan bool),
 	}
 }
