@@ -1,5 +1,7 @@
 package raft
 
+import "sync"
+
 // role type
 type Role int
 
@@ -18,26 +20,49 @@ type LogEntry struct {
 
 // raft struct
 type Raft struct {
-	ID          string
-	CurrentTerm int
-	Role        Role
-	VotedFor    string
-	Log         []LogEntry
-	CommitIndex int
-	LastApplied int
-	HeartbeatCh chan bool
+	mu sync.Mutex
+
+	ID            string
+	Peers         []*Raft
+	CurrentTerm   int
+	Role          Role
+	VotedFor      string
+	VotesReceived int
+	Log           []LogEntry
+	CommitIndex   int
+	LastApplied   int
+	HeartbeatCh   chan bool
 }
 
 // new raft constructor
 func NewRaft(id string) *Raft {
 	return &Raft{
-		ID:          id,
-		CurrentTerm: 0,
-		Role:        Follower,
-		VotedFor:    "",
-		Log:         []LogEntry{},
-		CommitIndex: 0,
-		LastApplied: 0,
-		HeartbeatCh: make(chan bool),
+		ID:            id,
+		CurrentTerm:   0,
+		Peers:         []*Raft{},
+		Role:          Follower,
+		VotedFor:      "",
+		VotesReceived: 0,
+		Log:           []LogEntry{},
+		CommitIndex:   0,
+		LastApplied:   0,
+		HeartbeatCh:   make(chan bool),
 	}
+}
+
+func DiscoverPeers(raftNodes []*Raft) {
+	var wg sync.WaitGroup
+	for _, r := range raftNodes {
+		wg.Add(1)
+		go func(r *Raft) {
+			defer wg.Done()
+			for _, n := range raftNodes {
+				if r.ID == n.ID{
+					continue
+				}
+				r.Peers = append(r.Peers, n)
+			}
+		}(r)
+	}
+	wg.Wait()
 }

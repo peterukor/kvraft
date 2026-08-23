@@ -1,6 +1,9 @@
 package raft
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // struct sent to other nodes to request vote
 type RequestVoteArgs struct {
@@ -21,6 +24,8 @@ func (r *Raft) BecomeCandidate() {
 	r.CurrentTerm++
 	r.Role = Candidate
 	r.VotedFor = r.ID
+	// changed from ++ to avoid cointinous counting every new election
+	r.VotesReceived = 1
 }
 
 // returns a nodes last log index and term
@@ -77,6 +82,9 @@ func (r *Raft) BuildRequestVoteArgs() *RequestVoteArgs {
 
 // handle requestVote request
 func (r *Raft) HandleRequestVote(rv *RequestVoteArgs) *RequestVoteReply {
+	// lock incase multiple nodes request votes
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	vote := false
 
 	// get last log index and term
@@ -119,4 +127,64 @@ func (r *Raft) HandleRequestVote(rv *RequestVoteArgs) *RequestVoteReply {
 		CurrentTerm: r.CurrentTerm,
 		VoteGranted: vote,
 	}
+}
+
+func (r *Raft) CountVotes(rvr RequestVoteReply) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	majority := len(r.Peers)/2 + 1
+
+	// ignore if vote is from a previous term
+	if rvr.CurrentTerm < r.CurrentTerm {
+		return
+	}
+
+	// ignore vote if node is a follower
+	if r.Role != Candidate {
+		return
+	}
+
+	// update the node's term if it is behind
+	if rvr.CurrentTerm > r.CurrentTerm {
+		r.CurrentTerm = rvr.CurrentTerm
+		r.Role = Follower
+		r.VotedFor = ""
+		r.VotesReceived = 0
+
+	} else if rvr.VoteGranted == true {
+		r.VotesReceived++
+		if r.VotesReceived >= majority {
+			r.Role = Leader
+		}
+	}
+}
+
+func (r *Raft) RequestVote() {
+	var wg sync.WaitGroup
+
+	// build the requestVoteArgs
+	nodeArgs := r.BuildRequestVoteArgs()
+	for _, raftNode := range r.Peers {
+		if raftNode.ID == r.ID {
+			continue
+		}
+		wg.Add(1)
+		go func(raftNode *Raft) {
+			// defer incase the goroutine crashes
+			defer wg.Done()
+
+			// a lock inside HandleRequestVote handles
+			// multiple RequestVote calls
+			voteReply := raftNode.HandleRequestVote(nodeArgs)
+			if voteReply != nil {
+
+				// a lock inside countVotes handles
+				// multiple goroutines changing votesReceived
+				r.CountVotes(*voteReply)
+			}
+
+		}(raftNode)
+	}
+	wg.Wait()
+
 }
