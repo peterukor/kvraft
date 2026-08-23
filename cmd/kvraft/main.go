@@ -43,7 +43,6 @@ func testRequestVote(n int) {
 	// }
 
 	// candidate.RequestVote()
-	// fmt.Println("Votes recieved by", candidate.ID,": ", candidate.VotesReceived)
 	// for _, i := range raftNodes {
 	// 	printAfterNodeInfo(i)
 	// }
@@ -69,8 +68,6 @@ func testRequestVote(n int) {
 	fmt.Println("Role:", candidate.Role)
 	fmt.Println("Term:", candidate.CurrentTerm)
 	fmt.Println("Voted For:", candidate.VotedFor)
-	fmt.Println("Votes Received:", candidate.VotesReceived)
-
 }
 
 func testHandleRequest() {
