@@ -27,7 +27,6 @@ type Raft struct {
 	CurrentTerm   int
 	Role          Role
 	VotedFor      string
-	VotesReceived int
 	Log           []LogEntry
 	CommitIndex   int
 	LastApplied   int
@@ -42,7 +41,6 @@ func NewRaft(id string) *Raft {
 		Peers:         []*Raft{},
 		Role:          Follower,
 		VotedFor:      "",
-		VotesReceived: 0,
 		Log:           []LogEntry{},
 		CommitIndex:   0,
 		LastApplied:   0,
@@ -56,12 +54,21 @@ func DiscoverPeers(raftNodes []*Raft) {
 		wg.Add(1)
 		go func(r *Raft) {
 			defer wg.Done()
+
+			// build the slice once so mutex is locked and unlocked once
+			var newPeers []*Raft
 			for _, n := range raftNodes {
 				if r.ID == n.ID{
 					continue
 				}
-				r.Peers = append(r.Peers, n)
+				// build the slice
+				newPeers = append(newPeers, n)
 			}
+
+			// add to the node
+			r.mu.Lock()
+			r.Peers = newPeers
+			r.mu.Unlock()
 		}(r)
 	}
 	wg.Wait()

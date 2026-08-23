@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"sync"
 	"time"
 )
 
@@ -19,15 +18,6 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-// increment currentTerm, become a candidate, and vote for itself
-func (r *Raft) BecomeCandidate() {
-	r.CurrentTerm++
-	r.Role = Candidate
-	r.VotedFor = r.ID
-	// changed from ++ to avoid cointinous counting every new election
-	r.VotesReceived = 1
-}
-
 // returns a nodes last log index and term
 func (r *Raft) lastLogIndexAndTerm() (int, int) {
 	var (
@@ -43,6 +33,27 @@ func (r *Raft) lastLogIndexAndTerm() (int, int) {
 		lastLogTerm = r.Log[lastLog].Term
 	}
 	return lastLogIndex, lastLogTerm
+}
+
+// increment currentTerm, become a candidate, and vote for itself
+func (r *Raft) BecomeCandidate() {
+	r.CurrentTerm++
+	r.Role = Candidate
+	r.VotedFor = r.ID
+}
+
+// build the requestVoteArgs and returns the address of the struct
+func (r *Raft) BuildRequestVoteArgs() *RequestVoteArgs {
+
+	// get last log index and term
+	lastIndex, lastTerm := r.lastLogIndexAndTerm()
+
+	return &RequestVoteArgs{
+		CandidateID:           r.ID,
+		CandidateTerm:         r.CurrentTerm,
+		CandidateLastLogIndex: lastIndex,
+		CandidateLastLogTerm:  lastTerm,
+	}
 }
 
 // initialize an election countdown timer that resets once the node recieves a heartbeat
@@ -63,20 +74,6 @@ func (r *Raft) RunElectionTimer() {
 			timer.Reset(2 * time.Second)
 		}
 
-	}
-}
-
-// build the requestVoteArgs and returns the address of the struct
-func (r *Raft) BuildRequestVoteArgs() *RequestVoteArgs {
-
-	// get last log index and term
-	lastIndex, lastTerm := r.lastLogIndexAndTerm()
-
-	return &RequestVoteArgs{
-		CandidateID:           r.ID,
-		CandidateTerm:         r.CurrentTerm,
-		CandidateLastLogIndex: lastIndex,
-		CandidateLastLogTerm:  lastTerm,
 	}
 }
 
@@ -119,8 +116,8 @@ func (r *Raft) HandleRequestVote(rv *RequestVoteArgs) *RequestVoteReply {
 	} else if rv.CandidateLastLogTerm == lastTerm {
 		// compare last log index if last log term matches
 		if rv.CandidateLastLogIndex >= lastIndex {
-			vote = true
 			r.VotedFor = rv.CandidateID
+			vote = true
 		}
 	}
 	return &RequestVoteReply{
@@ -129,19 +126,19 @@ func (r *Raft) HandleRequestVote(rv *RequestVoteArgs) *RequestVoteReply {
 	}
 }
 
-func (r *Raft) CountVotes(rvr RequestVoteReply) {
+// process vote reply
+func (r *Raft) ProcessVotes(rvr RequestVoteReply) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	majority := len(r.Peers)/2 + 1
 
 	// ignore if vote is from a previous term
 	if rvr.CurrentTerm < r.CurrentTerm {
-		return
+		return false
 	}
 
 	// ignore vote if node is a follower
 	if r.Role != Candidate {
-		return
+		return false
 	}
 
 	// update the node's term if it is behind
@@ -149,42 +146,74 @@ func (r *Raft) CountVotes(rvr RequestVoteReply) {
 		r.CurrentTerm = rvr.CurrentTerm
 		r.Role = Follower
 		r.VotedFor = ""
-		r.VotesReceived = 0
 
 	} else if rvr.VoteGranted == true {
-		r.VotesReceived++
-		if r.VotesReceived >= majority {
-			r.Role = Leader
-		}
+		return true
 	}
+	return false
 }
 
 func (r *Raft) RequestVote() {
-	var wg sync.WaitGroup
+
+	// lock incase to prevent race condition from new nodes added
+	r.mu.Lock()
+	peers := r.Peers
+	r.mu.Unlock()
+
+	nodeCount := len(peers)
+	if nodeCount == 0 {
+		r.Role = Leader
+		return
+	}
+
+	// channels to listen for election replies
+	votesCh := make(chan RequestVoteReply, nodeCount)
 
 	// build the requestVoteArgs
 	nodeArgs := r.BuildRequestVoteArgs()
-	for _, raftNode := range r.Peers {
+
+	for _, raftNode := range peers {
 		if raftNode.ID == r.ID {
 			continue
 		}
-		wg.Add(1)
+
 		go func(raftNode *Raft) {
-			// defer incase the goroutine crashes
-			defer wg.Done()
 
 			// a lock inside HandleRequestVote handles
 			// multiple RequestVote calls
 			voteReply := raftNode.HandleRequestVote(nodeArgs)
 			if voteReply != nil {
 
-				// a lock inside countVotes handles
-				// multiple goroutines changing votesReceived
-				r.CountVotes(*voteReply)
+				// send reply over channel
+				votesCh <- *voteReply
 			}
-
 		}(raftNode)
 	}
-	wg.Wait()
 
+	// increments loop as replies arrive in channels
+	majority := nodeCount/2 + 1
+	accepted := 1
+	rejected := 0
+
+	for range nodeCount {
+		voteReply := <-votesCh
+		voteResponse := r.ProcessVotes(voteReply)
+
+		// once majority is reached stop waiting
+		if voteResponse == true {
+			accepted++
+			if accepted == majority {
+				r.Role = Leader
+				return
+			}
+
+		} else {
+			rejected++
+			if rejected == majority {
+				r.Role = Follower
+				return
+			}
+		}
+
+	}
 }
