@@ -37,6 +37,8 @@ func (r *Raft) lastLogIndexAndTerm() (int, int) {
 
 // increment currentTerm, become a candidate, and vote for itself
 func (r *Raft) BecomeCandidate() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.CurrentTerm++
 	r.Role = Candidate
 	r.VotedFor = r.ID
