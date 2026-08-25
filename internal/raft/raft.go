@@ -1,6 +1,8 @@
 package raft
 
-import "sync"
+import (
+	"sync"
+)
 
 // role type
 type Role int
@@ -18,58 +20,72 @@ type LogEntry struct {
 	Command string
 }
 
+type Peer struct {
+	ID           string
+	Address      string
+	Next         int
+	Match        int
+	KnownEntry   int
+	UnknownEntry int
+}
+
 // raft struct
 type Raft struct {
 	mu sync.Mutex
 
-	ID            string
-	Peers         []*Raft
-	CurrentTerm   int
-	Role          Role
-	VotedFor      string
-	Log           []LogEntry
-	CommitIndex   int
-	LastApplied   int
-	HeartbeatCh   chan bool
+	ID          string
+	Address     string
+	Peers       map[string]*Peer
+	CurrentTerm int
+	Role        Role
+	VotedFor    string
+	Log         []LogEntry
+	CommitIndex int
+	LastApplied int
+	HeartbeatCh chan bool
 }
 
 // new raft constructor
-func NewRaft(id string) *Raft {
+func NewRaft(id string, address string) *Raft {
 	return &Raft{
-		ID:            id,
-		CurrentTerm:   0,
-		Peers:         []*Raft{},
-		Role:          Follower,
-		VotedFor:      "",
-		Log:           []LogEntry{},
-		CommitIndex:   0,
-		LastApplied:   0,
-		HeartbeatCh:   make(chan bool),
+		ID:          id,
+		Address:     address,
+		CurrentTerm: 0,
+		Peers:       map[string]*Peer{},
+		Role:        Follower,
+		VotedFor:    "",
+		Log:         []LogEntry{{0, 0, ""}},
+		CommitIndex: 0,
+		LastApplied: 0,
+		HeartbeatCh: make(chan bool),
 	}
 }
 
-func DiscoverPeers(raftNodes []*Raft) {
-	var wg sync.WaitGroup
-	for _, r := range raftNodes {
-		wg.Add(1)
-		go func(r *Raft) {
-			defer wg.Done()
+// accepts an ID: address map/dict of all nodes and their addresses
+func (r *Raft) ConfigurePeers(peers map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-			// build the slice once so mutex is locked and unlocked once
-			var newPeers []*Raft
-			for _, n := range raftNodes {
-				if r.ID == n.ID{
-					continue
-				}
-				// build the slice
-				newPeers = append(newPeers, n)
-			}
-
-			// add to the node
-			r.mu.Lock()
-			r.Peers = newPeers
-			r.mu.Unlock()
-		}(r)
+	for key, value := range peers {
+		if key == r.ID {
+			continue
+		}
+		// create a peer struct and append ID and address
+		r.Peers[key] = &Peer{
+			ID:      key,
+			Address: value,
+		}
 	}
-	wg.Wait()
+}
+
+func (r *Raft) lastLogIndexAndTerm() (int, int) {
+	var (
+		lastLogIndex int
+		lastLogTerm  int
+	)
+	lastLog := len(r.Log) - 1
+
+	lastLogIndex = r.Log[lastLog].Index
+	lastLogTerm = r.Log[lastLog].Term
+	return lastLogIndex, lastLogTerm
 }
