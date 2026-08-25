@@ -1,10 +1,24 @@
 package raft
 
 type AppendEntriesReply struct {
+	FollowerID          string
 	FollowerCurrentTerm int
 	Success             bool
-	ConflictTerm        int
+	Stale               bool
+	Mismatch            bool
 	ConflictIndex       int
+}
+
+func (r *Raft) findPrevTermFirstIndex(prevLogIndex int) int{
+
+	// while prev > 0
+	for prevLogIndex > 1 {
+		if r.Log[prevLogIndex].Term != r.Log[prevLogIndex - 1].Term{
+			break
+		}
+		prevLogIndex --
+	}
+	return prevLogIndex
 }
 
 func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
@@ -21,8 +35,10 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 	} else if ae.LeaderCurrentTerm < r.CurrentTerm {
 
 		return &AppendEntriesReply{
+			FollowerID:          r.ID,
 			FollowerCurrentTerm: r.CurrentTerm,
 			Success:             false,
+			Stale:               true,
 		}
 
 	}
@@ -31,11 +47,14 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 	// against an index out of error
 	if ae.PrevLogIndex > lastLogIndex {
 
+		conflictIndex := r.findPrevTermFirstIndex(lastLogIndex)
+
 		return &AppendEntriesReply{
+			FollowerID:          r.ID,
 			FollowerCurrentTerm: r.CurrentTerm,
 			Success:             false,
-			ConflictIndex:       lastLogIndex,
-			ConflictTerm:        r.Log[lastLogIndex].Term,
+			Mismatch:            true,
+			ConflictIndex:       conflictIndex,
 		}
 	}
 
@@ -64,19 +83,24 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 
 		// slice[:len(slice)] doesn't cause an error
 		r.Log = append(r.Log[:followerIndex], ae.Entries[entryIndex:]...)
+		r.CommitIndex = ae.CommitIndex
 		return &AppendEntriesReply{
+			FollowerID:          r.ID,
 			FollowerCurrentTerm: r.CurrentTerm,
 			Success:             true,
 		}
 
 	} else {
+
+		conflictIndex := r.findPrevTermFirstIndex(ae.PrevLogIndex)
 		// if the index doesn't match
 		// tell the leader "as at this entry, this is was my leadership cycle"
 		return &AppendEntriesReply{
+			FollowerID:          r.ID,
 			FollowerCurrentTerm: r.CurrentTerm,
 			Success:             false,
-			ConflictIndex:       ae.PrevLogIndex,
-			ConflictTerm:        r.Log[ae.PrevLogIndex].Term,
+			Mismatch:            true,
+			ConflictIndex:       conflictIndex,
 		}
 	}
 }
