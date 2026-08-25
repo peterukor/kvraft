@@ -75,7 +75,7 @@ func (r *Raft) ConfigurePeers(peers map[string]string) {
 			ID:      key,
 			Address: value,
 			Next:    len(r.Log),
-			Match:   0,
+			Match:   len(r.Log) - 1,
 		}
 	}
 }
