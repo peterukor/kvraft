@@ -36,41 +36,17 @@ func (r *Raft) BuildAppendEntriesArgs(next int, match int) *AppendEntriesArgs {
 	}
 }
 
-func (r *Raft) AppendEntries() {
-	r.mu.Lock()
-	clusterSize := len(r.Peers)
-	// build peers array in the lock
-	// make(slice type, length, capacity)
-	peers := make([]*Peer, 0, clusterSize)
-
-	for _, p := range r.Peers {
-		peers = append(peers, p)
+func (r *Raft) AppendEntries(peer *Peer) {
+	args := r.BuildAppendEntriesArgs(peer.Next, peer.Match)
+	Reply := r.sendAppendEntries(peer, args)
+	if Reply == nil {
+		Reply = &AppendEntriesReply{
+			FollowerID: peer.ID,
+			Success:    false,
+		}
 	}
-	r.mu.Unlock()
-
-	// create a channel to receive responses
-	AppendCh := make(chan *AppendEntriesReply, clusterSize)
-
-	// loop through peers and send each node entries
-	for _, peer := range peers {
-		go func(peer *Peer) {
-			args := r.BuildAppendEntriesArgs(peer.Next, peer.Match)
-			Reply := r.sendAppendEntries(peer, args)
-			if Reply != nil {
-				AppendCh <- Reply
-			} else {
-				AppendCh <- &AppendEntriesReply{
-					FollowerID: peer.ID,
-					Success:    false,
-				}
-			}
-		}(peer)
-	}
-
-	for range clusterSize {
-		Reply := <-AppendCh
-		r.HandleAppendEntriesResponse(Reply)
-	}
+	// each go routine handles it's own response
+	r.HandleAppendEntriesResponse(Reply)
 }
 
 func (r *Raft) HandleAppendEntriesResponse(aer *AppendEntriesReply) {
@@ -80,6 +56,11 @@ func (r *Raft) HandleAppendEntriesResponse(aer *AppendEntriesReply) {
 		r.CurrentTerm = aer.FollowerCurrentTerm
 		r.VotedFor = ""
 		r.Role = Follower
+		// restart timer
+		select {
+		case r.HeartbeatCh <- true:
+		default:
+		}
 	}
 	if aer.Mismatch {
 		r.Peers[aer.FollowerID].Match = aer.ConflictIndex - 1
