@@ -30,6 +30,8 @@ func (r *Raft) RunElectionTimer() {
 			if r.Role == Leader {
 				r.mu.Unlock()
 				r.StartLeaderReplication()
+				// restart timer after losing leadership
+				timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
 			} else {
 				r.mu.Unlock()
 				timer.Reset(r.NodeRandomTimer(electionMin, electionMax))

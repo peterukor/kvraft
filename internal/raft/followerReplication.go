@@ -18,7 +18,9 @@ func (r *Raft) findPrevTermFirstIndex(prevLogIndex int) int {
 		}
 		prevLogIndex--
 	}
-	return prevLogIndex
+	// if prevLogIndex is 0 return 1
+	// conflict is from the leader first index
+	return max(prevLogIndex, 1)
 }
 
 func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
