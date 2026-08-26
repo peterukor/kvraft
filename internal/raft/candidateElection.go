@@ -1,5 +1,7 @@
 package raft
 
+import "maps"
+
 // struct sent to other nodes to request vote
 type RequestVoteArgs struct {
 	CandidateID           string
@@ -44,20 +46,16 @@ func (r *Raft) RequestVote() {
 	// build the requestVoteArgs
 	nodeArgs := r.BuildRequestVoteArgs()
 	// build peers array in the lock
-	// make(slice type, length, capacity)
-	peers := make([]*Peer, 0, clusterSize)
-
-	for _, p := range r.Peers {
-		peers = append(peers, p)
-	}
+	peersMap := make(map[string]*Peer, clusterSize)
+	maps.Copy(peersMap, r.Peers)
 	r.mu.Unlock()
 
 	// channels to listen for election replies
 	votesCh := make(chan *RequestVoteReply, clusterSize)
 
-	for _, peer := range peers {
-
-		go func(peer *Peer) { // send requestVote over http
+	for _, peer := range peersMap {
+		// send requestVote over http
+		go func(peer *Peer) { 
 			voteReply := r.sendRequestVote(peer, nodeArgs)
 			if voteReply != nil {
 				// send reply over channel
