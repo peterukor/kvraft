@@ -39,6 +39,7 @@ func (r *Raft) RunElectionTimer() {
 			isLeader := r.Role == Leader
 			r.mu.Unlock()
 			if isLeader {
+				r.resetPeersState()
 				r.StartLeaderReplication()
 			}
 			timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
@@ -52,6 +53,17 @@ func (r *Raft) RunElectionTimer() {
 			}
 			timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
 		}
+	}
+}
+
+
+func (r *Raft) resetPeersState() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	lastLogIndex := len(r.Log)
+	for _, peer := range r.Peers {
+		peer.Match = lastLogIndex - 1
+		peer.Next = lastLogIndex
 	}
 }
 

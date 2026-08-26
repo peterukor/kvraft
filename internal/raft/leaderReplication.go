@@ -37,7 +37,10 @@ func (r *Raft) BuildAppendEntriesArgs(next int, match int) *AppendEntriesArgs {
 }
 
 func (r *Raft) AppendEntries(peer *Peer) {
-	args := r.BuildAppendEntriesArgs(peer.Next, peer.Match)
+	r.mu.Lock()
+	next, match := peer.Next, peer.Match
+	r.mu.Unlock()
+	args := r.BuildAppendEntriesArgs(next, match)
 	Reply := r.sendAppendEntries(peer, args)
 	if Reply == nil {
 		Reply = &AppendEntriesReply{
