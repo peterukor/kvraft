@@ -57,7 +57,6 @@ func NewRaft(id string, address string) *Raft {
 		Log:         []LogEntry{{0, 0, ""}},
 		CommitIndex: 0,
 		LastApplied: 0,
-		HeartbeatCh: make(chan bool),
 	}
 }
 
@@ -65,6 +64,7 @@ func NewRaft(id string, address string) *Raft {
 func (r *Raft) ConfigurePeers(peers map[string]string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.HeartbeatCh = make(chan bool, len(peers))
 
 	for key, value := range peers {
 		if key == r.ID {
