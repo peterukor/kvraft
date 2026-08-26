@@ -1,38 +1,9 @@
 package raft
 
-import (
-	"time"
-)
-
-
-
 // reply sent for a vote requested
 type RequestVoteReply struct {
 	CurrentTerm int
 	VoteGranted bool
-}
-
-
-
-// initialize an election countdown timer that resets once the node recieves a heartbeat
-func (r *Raft) RunElectionTimer() {
-	timer := time.NewTimer(2 * time.Second)
-	for {
-		select {
-		case <-timer.C:
-			r.BecomeCandidate()
-			return
-		case <-r.HeartbeatCh:
-
-			// handle if the timer has fired or is about to fire then reset the timer
-			// returns false if the timer has ended and flushes the channel
-			if !timer.Stop() {
-				<-timer.C
-			}
-			timer.Reset(2 * time.Second)
-		}
-
-	}
 }
 
 // handle requestVote request
@@ -76,6 +47,15 @@ func (r *Raft) HandleRequestVote(rv *RequestVoteArgs) *RequestVoteReply {
 		if rv.CandidateLastLogIndex >= lastIndex {
 			r.VotedFor = rv.CandidateID
 			vote = true
+		}
+	}
+
+	// leader found
+	// send heartbeat to reset timer
+	if vote {
+		select {
+		case r.HeartbeatCh <- true:
+		default:
 		}
 	}
 	return &RequestVoteReply{
