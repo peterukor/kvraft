@@ -68,6 +68,16 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 	if r.Log[ae.PrevLogIndex].Term == ae.PrevLogTerm {
 		followerIndex := ae.PrevLogIndex + 1
 		entryIndex := 0
+		
+		// handle an empty entry
+        if len(ae.Entries) == 0 {
+			r.CommitIndex = ae.CommitIndex
+            return &AppendEntriesReply{
+                FollowerID:          r.ID,
+                FollowerCurrentTerm: r.CurrentTerm,
+                Success:             true,
+            }
+        }
 
 		// skip over exsisting entries
 		for {
