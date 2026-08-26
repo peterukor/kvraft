@@ -1,6 +1,9 @@
 package raft
 
-import "maps"
+import (
+	"fmt"
+	"maps"
+)
 
 // struct sent to other nodes to request vote
 type RequestVoteArgs struct {
@@ -17,6 +20,11 @@ func (r *Raft) BecomeCandidate() {
 	r.CurrentTerm++
 	r.Role = Candidate
 	r.VotedFor = r.ID
+	fmt.Printf(
+		"[%s] became CANDIDATE term=%d\n",
+		r.ID,
+		r.CurrentTerm,
+	)
 }
 
 // build the requestVoteArgs and returns the address of the struct
@@ -55,7 +63,7 @@ func (r *Raft) RequestVote() {
 
 	for _, peer := range peersMap {
 		// send requestVote over http
-		go func(peer *Peer) { 
+		go func(peer *Peer) {
 			voteReply := r.sendRequestVote(peer, nodeArgs)
 			if voteReply != nil {
 				// send reply over channel
@@ -85,6 +93,11 @@ func (r *Raft) RequestVote() {
 		if voteResponse == true {
 			accepted++
 			if accepted == majority {
+				fmt.Printf(
+					"[%s] became LEADER term=%d\n",
+					r.ID,
+					r.CurrentTerm,
+				)
 				r.Role = Leader
 				r.mu.Unlock()
 				return
