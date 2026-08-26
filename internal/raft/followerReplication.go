@@ -9,14 +9,14 @@ type AppendEntriesReply struct {
 	ConflictIndex       int
 }
 
-func (r *Raft) findPrevTermFirstIndex(prevLogIndex int) int{
+func (r *Raft) findPrevTermFirstIndex(prevLogIndex int) int {
 
 	// while prev > 0
 	for prevLogIndex > 1 {
-		if r.Log[prevLogIndex].Term != r.Log[prevLogIndex - 1].Term{
+		if r.Log[prevLogIndex].Term != r.Log[prevLogIndex-1].Term {
 			break
 		}
-		prevLogIndex --
+		prevLogIndex--
 	}
 	return prevLogIndex
 }
@@ -43,10 +43,16 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 
 	}
 
+	// leader is not stale
+	// send heartbeat to reset
+	select {
+	case r.HeartbeatCh <- true:
+	default:
+	}
+
 	// handle a shorter log entry size
 	// against an index out of error
 	if ae.PrevLogIndex > lastLogIndex {
-
 		conflictIndex := r.findPrevTermFirstIndex(lastLogIndex)
 
 		return &AppendEntriesReply{
@@ -65,7 +71,6 @@ func (r *Raft) HandleAppendEntries(ae *AppendEntriesArgs) *AppendEntriesReply {
 
 		// skip over exsisting entries
 		for {
-
 			// handle index bigger than log entry size
 			// against an index out of range error
 			if followerIndex >= len(r.Log) ||
