@@ -23,24 +23,27 @@ func (r *Raft) RunElectionTimer() {
 	for {
 		select {
 		case <-timer.C:
+			r.mu.Lock()
+			if r.Role == Leader {
+				// a leader's own timer firing means nothing -- ignore it
+				r.mu.Unlock()
+				timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
+				continue
+			}
+			r.mu.Unlock()
 
 			r.BecomeCandidate()
 			r.RequestVote()
+
 			r.mu.Lock()
-			if r.Role == Leader {
-				r.mu.Unlock()
+			isLeader := r.Role == Leader
+			r.mu.Unlock()
+			if isLeader {
 				r.StartLeaderReplication()
-				// restart timer after losing leadership
-				timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
-			} else {
-				r.mu.Unlock()
-				timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
 			}
+			timer.Reset(r.NodeRandomTimer(electionMin, electionMax))
 
 		case <-r.HeartbeatCh:
-
-			// handle if the timer has fired or is about to fire then reset the timer
-			// returns false if the timer has ended and flushes the channel
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
